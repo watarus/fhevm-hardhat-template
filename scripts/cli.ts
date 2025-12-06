@@ -705,6 +705,17 @@ function scaffoldExample(exampleName: string, outputDir?: string): void {
     }
   }
 
+  // Copy tasks/accounts.ts (required by hardhat.config.ts)
+  const accountsSrc = path.join(baseDir, "tasks", "accounts.ts");
+  const accountsDest = path.join(absoluteTargetDir, "tasks", "accounts.ts");
+  if (fs.existsSync(accountsSrc)) {
+    try {
+      fs.copyFileSync(accountsSrc, accountsDest);
+    } catch (error) {
+      console.warn(`⚠️  Failed to copy tasks/accounts.ts: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   // Copy deploy file if exists
   const deploySrc = path.join(baseDir, "deploy", "deploy.ts");
   const deployDest = path.join(absoluteTargetDir, "deploy", "deploy.ts");
