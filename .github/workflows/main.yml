@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -24,6 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run compile
       - run: npm run build:ts
+      - run: npm run typecheck
       - run: npm test
       - run: npm run coverage
   build-and-test-unix:
@@ -43,5 +47,6 @@ jobs:
       - run: npm run lint
       - run: npm run compile
       - run: npm run build:ts
+      - run: npm run typecheck
       - run: npm test
       - run: npm run coverage

@@ -23,3 +23,8 @@ tmp
 coverage.json
 pnpm-lock.yaml
 yarn.lock
+
+# Claude Code
+z/
+CLAUDE.md
+.taskmaster/
