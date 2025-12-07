@@ -174,4 +174,8 @@ npm run deploy:sepolia
 
 ## License
 
-BSD-3-Clause-Clear
+This project is licensed under the BSD-3-Clause-Clear License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+**Built with ❤️ by the Zama team**
