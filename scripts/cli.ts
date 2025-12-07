@@ -13,6 +13,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { execSync } from "child_process";
 
 // Example definitions with metadata for documentation
 interface ExampleDefinition {
@@ -904,7 +905,6 @@ function generateDocs(): void {
 
     // Run prettier to format the generated docs
     console.log("📝 Formatting with prettier...");
-    const { execSync } = require("child_process");
     try {
       execSync('npx prettier --write "docs/**/*.md"', { stdio: "ignore" });
       console.log("✅ Formatting complete\n");
