@@ -1,261 +1,449 @@
-# FHEVM Encryption Patterns
+# FHEEncryption
 
-This guide explains the various ways to encrypt data in FHEVM smart contracts.
+Encryption patterns: asEuintX, fromExternal, batch operations
 
-## Table of Contents
+## Category: encryption
 
-1. [Overview](#overview)
-2. [Encryption Methods](#encryption-methods)
-3. [Data Types](#data-types)
-4. [Best Practices](#best-practices)
-5. [Common Patterns](#common-patterns)
-6. [Security Considerations](#security-considerations)
+## Concepts
 
-## Overview
+- `FHE.asEuint8`
+- `FHE.asEuint16`
+- `FHE.asEuint32`
+- `FHE.asEuint64`
+- `FHE.fromExternal`
+- `batch encryption`
+- `type casting`
 
-FHEVM provides two primary methods for encrypting data:
-
-1. **On-Chain Encryption** (`FHE.asEuintX`): Encrypt plaintext values directly in the smart contract
-2. **Client-Side Encryption** (`FHE.fromExternal`): Encrypt values client-side and submit them with proofs
-
-## Encryption Methods
-
-### Method 1: On-Chain Encryption (asEuintX)
+## Source Code
 
 ```solidity
-function encryptOnChain(uint32 plainValue) external {
-  // Encrypt plaintext value on-chain
-  euint32 encrypted = FHE.asEuint32(plainValue);
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
 
-  // Grant permissions
-  FHE.allowThis(encrypted);
-  FHE.allow(encrypted, msg.sender);
+import {
+    FHE,
+    euint8,
+    euint16,
+    euint32,
+    euint64,
+    externalEuint8,
+    externalEuint16,
+    externalEuint32,
+    externalEuint64
+} from "@fhevm/solidity/lib/FHE.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+
+/// @title FHE Encryption Patterns
+/// @author FHEVM Example Hub
+/// @notice Demonstrates various encryption patterns and data types in FHEVM
+/// @dev Shows how to encrypt values using different methods: asEuintX, fromExternal
+/// @custom:concept FHEVM supports encrypted integers of different sizes (8, 16, 32, 64, 128, 256 bits)
+/// @custom:concept Values can be encrypted on-chain (asEuintX) or client-side and imported (fromExternal)
+contract FHEEncryption is ZamaEthereumConfig {
+    // ============================================
+    // Storage: Encrypted values of different sizes
+    // ============================================
+
+    /// @notice Encrypted 8-bit unsigned integer (0-255)
+    euint8 private _value8;
+
+    /// @notice Encrypted 16-bit unsigned integer (0-65535)
+    euint16 private _value16;
+
+    /// @notice Encrypted 32-bit unsigned integer (0-4,294,967,295)
+    euint32 private _value32;
+
+    /// @notice Encrypted 64-bit unsigned integer (0-18,446,744,073,709,551,615)
+    euint64 private _value64;
+
+    /// @notice Array of encrypted values for batch operations
+    euint32[] private _batchValues;
+
+    /// @notice Mapping of user addresses to their encrypted balances
+    mapping(address user => euint64 balance) private _userBalances;
+
+    /// @notice Event emitted when a value is encrypted
+    /// @param user Address that encrypted the value
+    /// @param valueType Type of encrypted value (8, 16, 32, 64)
+    event ValueEncrypted(address indexed user, uint8 valueType);
+
+    /// @notice Event emitted when batch encryption is performed
+    /// @param user Address that performed batch encryption
+    /// @param count Number of values encrypted
+    event BatchEncrypted(address indexed user, uint256 count);
+
+    // ============================================
+    // PATTERN 1: On-Chain Encryption (asEuintX)
+    // ============================================
+
+    /// @notice Encrypt a plaintext value on-chain to euint8
+    /// @param plainValue Plaintext value to encrypt (0-255)
+    /// @dev This encrypts the value ON THE BLOCKCHAIN - anyone can see the plaintext input!
+    /// @dev Use this ONLY when the plaintext is public or when initializing with known constants
+    /// @custom:security WARNING: The plaintext value is visible in the transaction!
+    function encryptOnChain8(uint8 plainValue) external {
+        // FHE.asEuint8 converts a plaintext uint8 to an encrypted euint8
+        _value8 = FHE.asEuint8(plainValue);
+
+        // Grant permissions so the contract and caller can use this value
+        FHE.allowThis(_value8);
+        FHE.allow(_value8, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 8);
+    }
+
+    /// @notice Encrypt a plaintext value on-chain to euint16
+    /// @param plainValue Plaintext value to encrypt (0-65535)
+    /// @dev See encryptOnChain8 for security warnings
+    function encryptOnChain16(uint16 plainValue) external {
+        _value16 = FHE.asEuint16(plainValue);
+        FHE.allowThis(_value16);
+        FHE.allow(_value16, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 16);
+    }
+
+    /// @notice Encrypt a plaintext value on-chain to euint32
+    /// @param plainValue Plaintext value to encrypt (0-4,294,967,295)
+    /// @dev See encryptOnChain8 for security warnings
+    function encryptOnChain32(uint32 plainValue) external {
+        _value32 = FHE.asEuint32(plainValue);
+        FHE.allowThis(_value32);
+        FHE.allow(_value32, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 32);
+    }
+
+    /// @notice Encrypt a plaintext value on-chain to euint64
+    /// @param plainValue Plaintext value to encrypt (0-18,446,744,073,709,551,615)
+    /// @dev See encryptOnChain8 for security warnings
+    function encryptOnChain64(uint64 plainValue) external {
+        _value64 = FHE.asEuint64(plainValue);
+        FHE.allowThis(_value64);
+        FHE.allow(_value64, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 64);
+    }
+
+    // ============================================
+    // PATTERN 2: Client-Side Encryption (fromExternal)
+    // ============================================
+
+    /// @notice Import a client-encrypted value (euint8)
+    /// @param encryptedValue Encrypted value from client (using fhevmjs)
+    /// @param inputProof Zero-knowledge proof that the encryption is valid
+    /// @dev PREFERRED METHOD: Value is encrypted client-side, so plaintext never touches blockchain
+    /// @dev The client must use fhevmjs library to create the encrypted value and proof
+    /// @custom:concept The inputProof ensures the encrypted value was created correctly
+    function encryptFromClient8(externalEuint8 encryptedValue, bytes calldata inputProof) external {
+        // FHE.fromExternal verifies the proof and imports the encrypted value
+        euint8 verified = FHE.fromExternal(encryptedValue, inputProof);
+
+        _value8 = verified;
+
+        // Grant permissions
+        FHE.allowThis(_value8);
+        FHE.allow(_value8, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 8);
+    }
+
+    /// @notice Import a client-encrypted value (euint16)
+    /// @param encryptedValue Encrypted value from client
+    /// @param inputProof Zero-knowledge proof
+    /// @dev See encryptFromClient8 for details
+    function encryptFromClient16(externalEuint16 encryptedValue, bytes calldata inputProof) external {
+        euint16 verified = FHE.fromExternal(encryptedValue, inputProof);
+        _value16 = verified;
+        FHE.allowThis(_value16);
+        FHE.allow(_value16, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 16);
+    }
+
+    /// @notice Import a client-encrypted value (euint32)
+    /// @param encryptedValue Encrypted value from client
+    /// @param inputProof Zero-knowledge proof
+    /// @dev See encryptFromClient8 for details
+    function encryptFromClient32(externalEuint32 encryptedValue, bytes calldata inputProof) external {
+        euint32 verified = FHE.fromExternal(encryptedValue, inputProof);
+        _value32 = verified;
+        FHE.allowThis(_value32);
+        FHE.allow(_value32, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 32);
+    }
+
+    /// @notice Import a client-encrypted value (euint64)
+    /// @param encryptedValue Encrypted value from client
+    /// @param inputProof Zero-knowledge proof
+    /// @dev See encryptFromClient8 for details
+    function encryptFromClient64(externalEuint64 encryptedValue, bytes calldata inputProof) external {
+        euint64 verified = FHE.fromExternal(encryptedValue, inputProof);
+        _value64 = verified;
+        FHE.allowThis(_value64);
+        FHE.allow(_value64, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 64);
+    }
+
+    // ============================================
+    // PATTERN 3: Batch Encryption
+    // ============================================
+
+    /// @notice Encrypt multiple values at once (on-chain)
+    /// @param plainValues Array of plaintext values to encrypt
+    /// @dev Useful for initializing multiple values in one transaction
+    /// @custom:security WARNING: All plaintext values are visible in the transaction!
+    function batchEncryptOnChain(uint32[] calldata plainValues) external {
+        // Clear existing array
+        delete _batchValues;
+
+        // Encrypt each value and store
+        for (uint256 i = 0; i < plainValues.length; ++i) {
+            euint32 encrypted = FHE.asEuint32(plainValues[i]);
+            FHE.allowThis(encrypted);
+            FHE.allow(encrypted, msg.sender);
+            _batchValues.push(encrypted);
+        }
+
+        emit BatchEncrypted(msg.sender, plainValues.length);
+    }
+
+    /// @notice Encrypt multiple values from client (more secure)
+    /// @param encryptedValues Array of client-encrypted values
+    /// @param inputProofs Array of proofs (one per encrypted value)
+    /// @dev PREFERRED: Values are encrypted client-side
+    /// @dev All arrays must have the same length
+    function batchEncryptFromClient(externalEuint32[] calldata encryptedValues, bytes[] calldata inputProofs) external {
+        require(encryptedValues.length == inputProofs.length, "Array length mismatch");
+
+        // Clear existing array
+        delete _batchValues;
+
+        // Verify and store each encrypted value
+        for (uint256 i = 0; i < encryptedValues.length; ++i) {
+            euint32 verified = FHE.fromExternal(encryptedValues[i], inputProofs[i]);
+            FHE.allowThis(verified);
+            FHE.allow(verified, msg.sender);
+            _batchValues.push(verified);
+        }
+
+        emit BatchEncrypted(msg.sender, encryptedValues.length);
+    }
+
+    // ============================================
+    // PATTERN 4: User Balance Management
+    // ============================================
+
+    /// @notice Set your encrypted balance (from client)
+    /// @param encryptedBalance Your encrypted balance
+    /// @param inputProof Proof for the encrypted balance
+    /// @dev Demonstrates typical pattern for user-owned encrypted data
+    function setMyBalance(externalEuint64 encryptedBalance, bytes calldata inputProof) external {
+        euint64 verified = FHE.fromExternal(encryptedBalance, inputProof);
+
+        _userBalances[msg.sender] = verified;
+
+        // Grant permissions: contract and user
+        FHE.allowThis(verified);
+        FHE.allow(verified, msg.sender);
+    }
+
+    /// @notice Initialize your balance with a plaintext value
+    /// @param plainBalance Plaintext balance to encrypt
+    /// @dev Less secure - use setMyBalance instead when possible
+    /// @custom:security WARNING: Plaintext value is visible!
+    function initializeBalance(uint64 plainBalance) external {
+        euint64 encrypted = FHE.asEuint64(plainBalance);
+
+        _userBalances[msg.sender] = encrypted;
+
+        FHE.allowThis(encrypted);
+        FHE.allow(encrypted, msg.sender);
+    }
+
+    // ============================================
+    // PATTERN 5: Type Casting Between Sizes
+    // ============================================
+
+    /// @notice Cast euint8 to euint32
+    /// @param value8 Client-encrypted 8-bit value
+    /// @param inputProof Proof for the value
+    /// @dev Demonstrates upcasting (smaller type to larger type)
+    /// @custom:concept FHE supports casting between different encrypted integer sizes
+    function castUp8to32(externalEuint8 value8, bytes calldata inputProof) external {
+        euint8 verified8 = FHE.fromExternal(value8, inputProof);
+
+        // Cast euint8 to euint32
+        euint32 casted32 = FHE.asEuint32(verified8);
+
+        _value32 = casted32;
+
+        FHE.allowThis(_value32);
+        FHE.allow(_value32, msg.sender);
+
+        emit ValueEncrypted(msg.sender, 32);
+    }
+
+    // ============================================
+    // View Functions
+    // ============================================
+
+    /// @notice Get the stored encrypted 8-bit value
+    /// @return The encrypted euint8 value
+    /// @dev Only the user who encrypted it can decrypt
+    function getValue8() external view returns (euint8) {
+        return _value8;
+    }
+
+    /// @notice Get the stored encrypted 16-bit value
+    /// @return The encrypted euint16 value
+    function getValue16() external view returns (euint16) {
+        return _value16;
+    }
+
+    /// @notice Get the stored encrypted 32-bit value
+    /// @return The encrypted euint32 value
+    function getValue32() external view returns (euint32) {
+        return _value32;
+    }
+
+    /// @notice Get the stored encrypted 64-bit value
+    /// @return The encrypted euint64 value
+    function getValue64() external view returns (euint64) {
+        return _value64;
+    }
+
+    /// @notice Get all batch encrypted values
+    /// @return Array of encrypted values
+    function getBatchValues() external view returns (euint32[] memory) {
+        return _batchValues;
+    }
+
+    /// @notice Get a specific batch value by index
+    /// @param index Index in the batch array
+    /// @return The encrypted value at that index
+    function getBatchValue(uint256 index) external view returns (euint32) {
+        require(index < _batchValues.length, "Index out of bounds");
+        return _batchValues[index];
+    }
+
+    /// @notice Get your encrypted balance
+    /// @return Your encrypted balance (euint64)
+    function getMyBalance() external view returns (euint64) {
+        return _userBalances[msg.sender];
+    }
+
+    /// @notice Check if you have a balance set
+    /// @return True if balance is initialized
+    function hasBalance() external view returns (bool) {
+        return FHE.isInitialized(_userBalances[msg.sender]);
+    }
 }
+
 ```
 
-**When to use:**
+## NatSpec Documentation
+
+### @title
+
+- FHE Encryption Patterns
+
+### @author
+
+- FHEVM Example Hub
+
+### @notice
+
+- Demonstrates various encryption patterns and data types in FHEVM
+- Encrypted 8-bit unsigned integer (0-255)
+- Encrypted 16-bit unsigned integer (0-65535)
+- Encrypted 32-bit unsigned integer (0-4,294,967,295)
+- Encrypted 64-bit unsigned integer (0-18,446,744,073,709,551,615)
+- Array of encrypted values for batch operations
+- Mapping of user addresses to their encrypted balances
+- Event emitted when a value is encrypted
+- Event emitted when batch encryption is performed
+- Encrypt a plaintext value on-chain to euint8
+- Encrypt a plaintext value on-chain to euint16
+- Encrypt a plaintext value on-chain to euint32
+- Encrypt a plaintext value on-chain to euint64
+- Import a client-encrypted value (euint8)
+- Import a client-encrypted value (euint16)
+- Import a client-encrypted value (euint32)
+- Import a client-encrypted value (euint64)
+- Encrypt multiple values at once (on-chain)
+- Encrypt multiple values from client (more secure)
+- Set your encrypted balance (from client)
+- Initialize your balance with a plaintext value
+- Cast euint8 to euint32
+- Get the stored encrypted 8-bit value
+- Get the stored encrypted 16-bit value
+- Get the stored encrypted 32-bit value
+- Get the stored encrypted 64-bit value
+- Get all batch encrypted values
+- Get a specific batch value by index
+- Get your encrypted balance
+- Check if you have a balance set
+
+### @dev
+
+- Shows how to encrypt values using different methods: asEuintX, fromExternal
+- This encrypts the value ON THE BLOCKCHAIN - anyone can see the plaintext input!
+- Use this ONLY when the plaintext is public or when initializing with known constants
+- See encryptOnChain8 for security warnings
+- See encryptOnChain8 for security warnings
+- See encryptOnChain8 for security warnings
+- PREFERRED METHOD: Value is encrypted client-side, so plaintext never touches blockchain
+- The client must use fhevmjs library to create the encrypted value and proof
+- See encryptFromClient8 for details
+- See encryptFromClient8 for details
+- See encryptFromClient8 for details
+- Useful for initializing multiple values in one transaction
+- PREFERRED: Values are encrypted client-side
+- All arrays must have the same length
+- Demonstrates typical pattern for user-owned encrypted data
+- Less secure - use setMyBalance instead when possible
+- Demonstrates upcasting (smaller type to larger type)
+- Only the user who encrypted it can decrypt
+
+### @param
+
+- user Address that encrypted the value
+- valueType Type of encrypted value (8, 16, 32, 64)
+- user Address that performed batch encryption
+- count Number of values encrypted
+- plainValue Plaintext value to encrypt (0-255)
+- plainValue Plaintext value to encrypt (0-65535)
+- plainValue Plaintext value to encrypt (0-4,294,967,295)
+- plainValue Plaintext value to encrypt (0-18,446,744,073,709,551,615)
+- encryptedValue Encrypted value from client (using fhevmjs)
+- inputProof Zero-knowledge proof that the encryption is valid
+- encryptedValue Encrypted value from client
+- inputProof Zero-knowledge proof
+- encryptedValue Encrypted value from client
+- inputProof Zero-knowledge proof
+- encryptedValue Encrypted value from client
+- inputProof Zero-knowledge proof
+- plainValues Array of plaintext values to encrypt
+- encryptedValues Array of client-encrypted values
+- inputProofs Array of proofs (one per encrypted value)
+- encryptedBalance Your encrypted balance
+- inputProof Proof for the encrypted balance
+- plainBalance Plaintext balance to encrypt
+- value8 Client-encrypted 8-bit value
+- inputProof Proof for the value
+- index Index in the batch array
+
+### @return
+
+- The encrypted euint8 value
+- The encrypted euint16 value
+- The encrypted euint32 value
+- The encrypted euint64 value
+- Array of encrypted values
+- The encrypted value at that index
+- Your encrypted balance (euint64)
+- True if balance is initialized
 
-- Initializing contract with known constants
-- The plaintext value is already public
-- Testing and development
-
-**⚠️ Security Warning:** The plaintext value is visible in the transaction data! Anyone can see what you encrypted.
-
-### Method 2: Client-Side Encryption (fromExternal) - RECOMMENDED
-
-```solidity
-function encryptFromClient(externalEuint32 encryptedValue, bytes calldata inputProof) external {
-  // Verify and import client-encrypted value
-  euint32 verified = FHE.fromExternal(encryptedValue, inputProof);
-
-  // Grant permissions
-  FHE.allowThis(verified);
-  FHE.allow(verified, msg.sender);
-}
-```
-
-**When to use:**
-
-- **Always prefer this method for sensitive data**
-- User balances, private information, votes
-- Any data that should remain confidential
-
-**Client-side (using fhevmjs):**
-
-```javascript
-import { createInstance } from "fhevmjs";
-
-// Create FHEVM instance
-const instance = await createInstance({ chainId, publicKey });
-
-// Encrypt a value
-const input = instance.createEncryptedInput(contractAddress, userAddress);
-input.add32(42); // Encrypt the number 42
-const encryptedInput = await input.encrypt();
-
-// Call contract with encrypted value and proof
-await contract.encryptFromClient(encryptedInput.handles[0], encryptedInput.inputProof);
-```
-
-## Data Types
-
-FHEVM supports encrypted integers of various sizes:
-
-| Type       | Plaintext Equivalent | Range                          | Use Case                         |
-| ---------- | -------------------- | ------------------------------ | -------------------------------- |
-| `euint8`   | `uint8`              | 0 - 255                        | Flags, small counts, percentages |
-| `euint16`  | `uint16`             | 0 - 65,535                     | Medium counts, prices            |
-| `euint32`  | `uint32`             | 0 - 4,294,967,295              | Large counts, timestamps         |
-| `euint64`  | `uint64`             | 0 - 18,446,744,073,709,551,615 | Balances, large values           |
-| `euint128` | `uint128`            | 0 - 2^128-1                    | Very large balances              |
-| `euint256` | `uint256`            | 0 - 2^256-1                    | Maximum precision                |
-
-**Example:**
-
-```solidity
-// Different sizes for different use cases
-euint8 private _voteChoice;      // 0-255 is enough for vote options
-euint32 private _userId;         // Up to 4 billion users
-euint64 private _tokenBalance;   // Large token amounts
-```
-
-## Best Practices
-
-### 1. Always Grant Permissions
-
-After creating an encrypted value, you MUST grant permissions:
-
-```solidity
-euint32 value = FHE.asEuint32(42);
-
-// REQUIRED: Let the contract use this value
-FHE.allowThis(value);
-
-// REQUIRED: Let the user decrypt this value
-FHE.allow(value, msg.sender);
-```
-
-Without `FHE.allow()`, users cannot decrypt their own data!
-
-### 2. Choose the Right Size
-
-Use the smallest encrypted type that fits your data:
-
-```solidity
-// ❌ BAD: Wastes gas
-euint256 private _percentage; // Only needs 0-100
-
-// ✅ GOOD: Right-sized
-euint8 private _percentage; // 0-255 is perfect
-```
-
-### 3. Prefer Client-Side Encryption
-
-```solidity
-// ❌ AVOID: Plaintext visible on-chain
-function setBalance(uint64 amount) external {
-  _balance = FHE.asEuint64(amount); // amount is public!
-}
-
-// ✅ PREFER: Encrypted client-side
-function setBalance(externalEuint64 encrypted, bytes calldata proof) external {
-  _balance = FHE.fromExternal(encrypted, proof); // secure!
-}
-```
-
-## Common Patterns
-
-### Pattern 1: User Balance
-
-```solidity
-mapping(address => euint64) private _balances;
-
-function setBalance(externalEuint64 encrypted, bytes calldata proof) external {
-    euint64 balance = FHE.fromExternal(encrypted, proof);
-    _balances[msg.sender] = balance;
-
-    FHE.allowThis(balance);
-    FHE.allow(balance, msg.sender);
-}
-```
-
-### Pattern 2: Batch Encryption
-
-```solidity
-function batchEncrypt(externalEuint32[] calldata values, bytes[] calldata proofs) external {
-  require(values.length == proofs.length, "Length mismatch");
-
-  for (uint256 i = 0; i < values.length; i++) {
-    euint32 verified = FHE.fromExternal(values[i], proofs[i]);
-    FHE.allowThis(verified);
-    FHE.allow(verified, msg.sender);
-    // Store or process verified
-  }
-}
-```
-
-### Pattern 3: Type Casting
-
-```solidity
-// Upcast: smaller type to larger type
-euint8 small = FHE.asEuint8(10);
-euint32 large = FHE.asEuint32(small); // Safe upcast
-```
-
-### Pattern 4: Initialization with Constants
-
-```solidity
-constructor() {
-    // Initialize with public constant
-    _totalSupply = FHE.asEuint64(1000000);
-    FHE.allowThis(_totalSupply);
-}
-```
-
-## Security Considerations
-
-### 1. Transaction Data is Public
-
-When using `FHE.asEuintX()`:
-
-```solidity
-// ⚠️ WARNING: Anyone can see that you encrypted "12345"
-_secretValue = FHE.asEuint32(12345);
-```
-
-The number `12345` appears in plaintext in the transaction data on the blockchain!
-
-### 2. Input Validation
-
-Always validate inputs when accepting encrypted values:
-
-```solidity
-function storeValue(externalEuint32 encrypted, bytes calldata proof) external {
-  // fromExternal automatically validates the proof
-  euint32 verified = FHE.fromExternal(encrypted, proof);
-
-  // Can add additional business logic validation
-  // (but can't check the encrypted value directly)
-
-  _values[msg.sender] = verified;
-}
-```
-
-### 3. Permission Management
-
-Remember:
-
-- `FHE.allowThis(value)` - Let the contract operate on the value
-- `FHE.allow(value, user)` - Let the user decrypt the value
-- Permissions are **permanent** - once granted, cannot be revoked
-
-### 4. Gas Costs
-
-Encrypted operations are more expensive than plaintext:
-
-- Encrypting values has gas overhead
-- Larger encrypted types (euint256) cost more than smaller ones (euint8)
-- Batch operations can save gas compared to individual calls
-
-## Complete Example
-
-See `contracts/FHEEncryption.sol` for a full implementation demonstrating:
-
-- All encryption methods
-- All data types
-- Batch encryption
-- User balance management
-- Type casting
-- Best practices
-
-## Next Steps
-
-- Learn about [Decryption Patterns](./decryption.md)
-- See [Access Control](./access-control.md) for permission management
-- Check [Arithmetic Operations](./arithmetic.md) for working with encrypted values
-
-## Additional Resources
-
-- [FHEVM Documentation](https://docs.zama.ai/fhevm)
-- [fhevmjs Library](https://docs.zama.ai/fhevm/getting_started/connect)
-- [FHEVM Solidity API](https://docs.zama.ai/fhevm/references/api)

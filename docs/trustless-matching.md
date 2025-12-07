@@ -17,8 +17,8 @@ Private matching (dating app style) - votes revealed only on mutual match
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { FHE, ebool, externalEbool } from "@fhevm/solidity/lib/FHE.sol";
-import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+import {FHE, ebool, externalEbool} from "@fhevm/solidity/lib/FHE.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /// @title Trustless Matching - Private Voting System
 /// @author FHEVM Example Hub
@@ -27,104 +27,114 @@ import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 /// @custom:concept Key insight: Votes are encrypted booleans. Only when BOTH parties vote,
 ///                 the AND of their votes is revealed. Individual votes remain private.
 contract TrustlessMatching is ZamaEthereumConfig {
-  /// @notice Tracks whether a user is registered
-  mapping(address => bool) public registered;
+    /// @notice Tracks whether a user is registered
+    mapping(address user => bool isRegistered) public registered;
 
-  /// @notice Encrypted votes: votes[voter][target] = encrypted boolean
-  mapping(address => mapping(address => ebool)) private votes;
+    /// @notice Encrypted votes: votes[voter][target] = encrypted boolean
+    mapping(address voter => mapping(address target => ebool vote)) private votes;
 
-  /// @notice Tracks if a user has voted for a target
-  mapping(address => mapping(address => bool)) public hasVoted;
+    /// @notice Tracks if a user has voted for a target
+    mapping(address voter => mapping(address target => bool voted)) public hasVoted;
 
-  /// @notice Events
-  event UserRegistered(address indexed user);
-  event VoteCast(address indexed voter, address indexed target);
-  event MatchChecked(address indexed user1, address indexed user2);
+    /// @notice Event emitted when a user registers
+    /// @param user Address of the registered user
+    event UserRegistered(address indexed user);
 
-  /// @notice Register as a user
-  /// @dev Anyone can register to participate in matching
-  function register() external {
-    require(!registered[msg.sender], "Already registered");
-    registered[msg.sender] = true;
-    emit UserRegistered(msg.sender);
-  }
+    /// @notice Event emitted when a vote is cast
+    /// @param voter Address of the voter
+    /// @param target Address of the vote target
+    event VoteCast(address indexed voter, address indexed target);
 
-  /// @notice Cast an encrypted vote for a target user
-  /// @param target The user to vote for
-  /// @param encryptedVote The encrypted boolean vote (true = like, false = pass)
-  /// @param inputProof The input proof for the encrypted vote
-  /// @dev The vote remains encrypted - no one can see if it's like or pass
-  function vote(address target, externalEbool encryptedVote, bytes calldata inputProof) external {
-    require(registered[msg.sender], "Not registered");
-    require(registered[target], "Target not registered");
-    require(msg.sender != target, "Cannot vote for yourself");
-    require(!hasVoted[msg.sender][target], "Already voted");
+    /// @notice Event emitted when a match is checked
+    /// @param user1 Address of the first user
+    /// @param user2 Address of the second user
+    event MatchChecked(address indexed user1, address indexed user2);
 
-    ebool voteValue = FHE.fromExternal(encryptedVote, inputProof);
-    votes[msg.sender][target] = voteValue;
-    hasVoted[msg.sender][target] = true;
+    /// @notice Register as a user
+    /// @dev Anyone can register to participate in matching
+    function register() external {
+        require(!registered[msg.sender], "Already registered");
+        registered[msg.sender] = true;
+        emit UserRegistered(msg.sender);
+    }
 
-    // Allow contract and voter to access this vote
-    FHE.allowThis(voteValue);
-    FHE.allow(voteValue, msg.sender);
+    /// @notice Cast an encrypted vote for a target user
+    /// @param target The user to vote for
+    /// @param encryptedVote The encrypted boolean vote (true = like, false = pass)
+    /// @param inputProof The input proof for the encrypted vote
+    /// @dev The vote remains encrypted - no one can see if it's like or pass
+    function vote(address target, externalEbool encryptedVote, bytes calldata inputProof) external {
+        require(registered[msg.sender], "Not registered");
+        require(registered[target], "Target not registered");
+        require(msg.sender != target, "Cannot vote for yourself");
+        require(!hasVoted[msg.sender][target], "Already voted");
 
-    emit VoteCast(msg.sender, target);
-  }
+        ebool voteValue = FHE.fromExternal(encryptedVote, inputProof);
+        votes[msg.sender][target] = voteValue;
+        hasVoted[msg.sender][target] = true;
 
-  /// @notice Check if both parties have voted for each other
-  /// @param other The other user to check
-  /// @return bothVoted True if both parties have cast votes
-  function haveBothVoted(address other) external view returns (bool bothVoted) {
-    return hasVoted[msg.sender][other] && hasVoted[other][msg.sender];
-  }
+        // Allow contract and voter to access this vote
+        FHE.allowThis(voteValue);
+        FHE.allow(voteValue, msg.sender);
 
-  /// @notice Get the encrypted match result (vote1 AND vote2)
-  /// @param other The other user to check match with
-  /// @return matchResult Encrypted boolean - true only if BOTH voted "like"
-  /// @dev This returns encrypted result. Only parties with permission can decrypt.
-  ///      The magic: even though the contract computes AND, neither party learns
-  ///      the other's individual vote - only the final match result!
-  function getEncryptedMatchResult(address other) external returns (ebool matchResult) {
-    require(hasVoted[msg.sender][other], "You haven't voted for this user");
-    require(hasVoted[other][msg.sender], "They haven't voted for you");
+        emit VoteCast(msg.sender, target);
+    }
 
-    ebool myVote = votes[msg.sender][other];
-    ebool theirVote = votes[other][msg.sender];
+    /// @notice Check if both parties have voted for each other
+    /// @param other The other user to check
+    /// @return bothVoted True if both parties have cast votes
+    function haveBothVoted(address other) external view returns (bool bothVoted) {
+        return hasVoted[msg.sender][other] && hasVoted[other][msg.sender];
+    }
 
-    // The key FHE operation: encrypted AND
-    // Result is encrypted true ONLY if both votes are true
-    matchResult = FHE.and(myVote, theirVote);
+    /// @notice Get the encrypted match result (vote1 AND vote2)
+    /// @param other The other user to check match with
+    /// @return matchResult Encrypted boolean - true only if BOTH voted "like"
+    /// @dev This returns encrypted result. Only parties with permission can decrypt.
+    ///      The magic: even though the contract computes AND, neither party learns
+    ///      the other's individual vote - only the final match result!
+    function getEncryptedMatchResult(address other) external returns (ebool matchResult) {
+        require(hasVoted[msg.sender][other], "You haven't voted for this user");
+        require(hasVoted[other][msg.sender], "They haven't voted for you");
 
-    // Allow both parties to decrypt the match result
-    FHE.allowThis(matchResult);
-    FHE.allow(matchResult, msg.sender);
-    FHE.allow(matchResult, other);
+        ebool myVote = votes[msg.sender][other];
+        ebool theirVote = votes[other][msg.sender];
 
-    emit MatchChecked(msg.sender, other);
-  }
+        // The key FHE operation: encrypted AND
+        // Result is encrypted true ONLY if both votes are true
+        matchResult = FHE.and(myVote, theirVote);
 
-  /// @notice Get your own encrypted vote for a target (for re-encryption)
-  /// @param target The user you voted for
-  /// @return Your encrypted vote
-  function getMyVote(address target) external view returns (ebool) {
-    require(hasVoted[msg.sender][target], "You haven't voted for this user");
-    return votes[msg.sender][target];
-  }
+        // Allow both parties to decrypt the match result
+        FHE.allowThis(matchResult);
+        FHE.allow(matchResult, msg.sender);
+        FHE.allow(matchResult, other);
 
-  /// @notice Check if you've voted for a specific user
-  /// @param target The user to check
-  /// @return True if you have voted for them
-  function didIVote(address target) external view returns (bool) {
-    return hasVoted[msg.sender][target];
-  }
+        emit MatchChecked(msg.sender, other);
+    }
 
-  /// @notice Check if a specific user has voted for you
-  /// @param voter The user to check
-  /// @return True if they have voted for you
-  function didTheyVote(address voter) external view returns (bool) {
-    return hasVoted[voter][msg.sender];
-  }
+    /// @notice Get your own encrypted vote for a target (for re-encryption)
+    /// @param target The user you voted for
+    /// @return Your encrypted vote
+    function getMyVote(address target) external view returns (ebool) {
+        require(hasVoted[msg.sender][target], "You haven't voted for this user");
+        return votes[msg.sender][target];
+    }
+
+    /// @notice Check if you've voted for a specific user
+    /// @param target The user to check
+    /// @return True if you have voted for them
+    function didIVote(address target) external view returns (bool) {
+        return hasVoted[msg.sender][target];
+    }
+
+    /// @notice Check if a specific user has voted for you
+    /// @param voter The user to check
+    /// @return True if they have voted for you
+    function didTheyVote(address voter) external view returns (bool) {
+        return hasVoted[voter][msg.sender];
+    }
 }
+
 ```
 
 ## NatSpec Documentation
@@ -143,7 +153,9 @@ contract TrustlessMatching is ZamaEthereumConfig {
 - Tracks whether a user is registered
 - Encrypted votes: votes[voter][target] = encrypted boolean
 - Tracks if a user has voted for a target
-- Events
+- Event emitted when a user registers
+- Event emitted when a vote is cast
+- Event emitted when a match is checked
 - Register as a user
 - Cast an encrypted vote for a target user
 - Check if both parties have voted for each other
@@ -161,6 +173,11 @@ contract TrustlessMatching is ZamaEthereumConfig {
 
 ### @param
 
+- user Address of the registered user
+- voter Address of the voter
+- target Address of the vote target
+- user1 Address of the first user
+- user2 Address of the second user
 - target The user to vote for
 - encryptedVote The encrypted boolean vote (true = like, false = pass)
 - inputProof The input proof for the encrypted vote
@@ -177,3 +194,4 @@ contract TrustlessMatching is ZamaEthereumConfig {
 - Your encrypted vote
 - True if you have voted for them
 - True if they have voted for you
+

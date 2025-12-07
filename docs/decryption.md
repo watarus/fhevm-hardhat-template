@@ -1,431 +1,403 @@
-# FHEVM Decryption Patterns
+# FHEDecryption
 
-This guide explains how to decrypt encrypted data in FHEVM and manage decryption access.
+Decryption patterns: user decryption, multi-user access, conditional access
 
-## Table of Contents
+## Category: encryption
 
-1. [Overview](#overview)
-2. [Decryption Methods](#decryption-methods)
-3. [Access Control](#access-control)
-4. [Decryption Patterns](#decryption-patterns)
-5. [Client-Side Decryption](#client-side-decryption)
-6. [Best Practices](#best-practices)
+## Concepts
 
-## Overview
+- `FHE.allow`
+- `client-side decryption`
+- `access control`
+- `conditional decryption`
+- `batch decryption`
 
-In FHEVM, there are two types of decryption:
-
-1. **User Decryption (Private)**: Users decrypt their own data client-side using their private key
-2. **Public Decryption**: Encrypted values can be revealed to everyone (less common)
-
-**Important:** Smart contracts cannot see decrypted values directly. All decryption happens client-side!
-
-## Decryption Methods
-
-### User Decryption Flow
-
-```
-1. Smart Contract: Store encrypted value + FHE.allow(value, user)
-                    ↓
-2. User calls view function to get encrypted value
-                    ↓
-3. Client (fhevmjs): Decrypt using user's private key
-                    ↓
-4. User sees plaintext value
-```
-
-### Step 1: Grant Decryption Permission
+## Source Code
 
 ```solidity
-function storeData(externalEuint64 encrypted, bytes calldata proof) external {
-  euint64 data = FHE.fromExternal(encrypted, proof);
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
 
-  _userData[msg.sender] = data;
+import {
+    FHE,
+    euint8,
+    euint32,
+    euint64,
+    externalEuint8,
+    externalEuint32,
+    externalEuint64
+} from "@fhevm/solidity/lib/FHE.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
-  // CRITICAL: Grant decryption permission
-  FHE.allowThis(data);
-  FHE.allow(data, msg.sender); // ← This allows user to decrypt!
+/// @title FHE Decryption Patterns
+/// @author FHEVM Example Hub
+/// @notice Demonstrates various decryption patterns in FHEVM
+/// @dev Shows user decryption (private) and public decryption patterns
+/// @custom:concept Decryption in FHEVM requires proper access control via FHE.allow()
+/// @custom:concept Users decrypt values client-side using fhevmjs and their private key
+/// @custom:concept Contract cannot see decrypted values directly - it only sees encrypted data
+contract FHEDecryption is ZamaEthereumConfig {
+    // ============================================
+    // Storage
+    // ============================================
+
+    /// @notice User private data (only owner can decrypt)
+    mapping(address user => euint64 data) private _privateData;
+
+    /// @notice Shared computation result (multiple users can decrypt)
+    euint32 private _computationResult;
+
+    /// @notice Users with access to computation result
+    mapping(address user => bool hasAccess) public hasResultAccess;
+
+    /// @notice Counter for computation results
+    uint256 private _resultCounter;
+
+    /// @notice Event emitted when private data is stored
+    /// @param user User who stored the data
+    event PrivateDataStored(address indexed user);
+
+    /// @notice Event emitted when computation is performed
+    /// @param resultId ID of the computation result
+    event ComputationPerformed(uint256 indexed resultId);
+
+    /// @notice Event emitted when access is granted
+    /// @param user User granted access
+    /// @param resultId Result they can access
+    event AccessGranted(address indexed user, uint256 indexed resultId);
+
+    // ============================================
+    // PATTERN 1: User Decryption (Single Value)
+    // ============================================
+
+    /// @notice Store your private encrypted value
+    /// @param encryptedValue Your encrypted value
+    /// @param inputProof Proof for the encrypted value
+    /// @dev After calling this, you can decrypt the value client-side using fhevmjs
+    /// @custom:concept Client-side decryption flow:
+    ///   1. Call this function to store encrypted value with FHE.allow(value, msg.sender)
+    ///   2. Client uses fhevmjs.createEIP712() to create decryption request
+    ///   3. Client calls contract's view function to get encrypted value
+    ///   4. Client uses fhevmjs.decrypt() to decrypt the value locally
+    function storeMyData(externalEuint64 encryptedValue, bytes calldata inputProof) external {
+        euint64 verified = FHE.fromExternal(encryptedValue, inputProof);
+
+        _privateData[msg.sender] = verified;
+
+        // CRITICAL: FHE.allow grants decryption rights to msg.sender
+        // Without this, the user CANNOT decrypt their own data!
+        FHE.allowThis(verified);
+        FHE.allow(verified, msg.sender);
+
+        emit PrivateDataStored(msg.sender);
+    }
+
+    /// @notice Get your private encrypted value
+    /// @return Your encrypted value (decrypt client-side using fhevmjs)
+    /// @dev To decrypt client-side:
+    ///   const encrypted = await contract.getMyData();
+    ///   const decrypted = await instance.decrypt(contractAddress, encrypted);
+    /// @custom:concept The contract returns encrypted data; only YOUR client can decrypt it
+    function getMyData() external view returns (euint64) {
+        require(FHE.isInitialized(_privateData[msg.sender]), "No data stored");
+        return _privateData[msg.sender];
+    }
+
+    // ============================================
+    // PATTERN 2: User Decryption (Multiple Values)
+    // ============================================
+
+    /// @notice Perform computation and grant access to result
+    /// @param a First encrypted operand
+    /// @param proofA Proof for first operand
+    /// @param b Second encrypted operand
+    /// @param proofB Proof for second operand
+    /// @return The encrypted result (you can decrypt this client-side)
+    /// @dev Demonstrates granting decryption access for a newly computed value
+    function computeAndAllow(
+        externalEuint32 a,
+        bytes calldata proofA,
+        externalEuint32 b,
+        bytes calldata proofB
+    ) external returns (euint32) {
+        euint32 valueA = FHE.fromExternal(a, proofA);
+        euint32 valueB = FHE.fromExternal(b, proofB);
+
+        // Perform encrypted computation
+        euint32 result = FHE.add(valueA, valueB);
+
+        // Store result
+        _computationResult = result;
+        ++_resultCounter;
+
+        // PATTERN: Grant decryption access to the caller
+        // This allows them to decrypt the result client-side
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        hasResultAccess[msg.sender] = true;
+
+        emit ComputationPerformed(_resultCounter);
+
+        return result;
+    }
+
+    /// @notice Grant another user access to decrypt the computation result
+    /// @param user Address to grant access
+    /// @dev PATTERN: Granting decryption access to additional users
+    /// @custom:concept Once FHE.allow is called, that user can decrypt this value forever
+    /// @custom:concept There is NO way to revoke decryption access - you must create a new encrypted value
+    function grantResultAccess(address user) external {
+        require(hasResultAccess[msg.sender], "You don't have access to grant");
+        require(!hasResultAccess[user], "User already has access");
+
+        // Grant decryption permission
+        FHE.allow(_computationResult, user);
+        hasResultAccess[user] = true;
+
+        emit AccessGranted(user, _resultCounter);
+    }
+
+    /// @notice Get the computation result (if you have access)
+    /// @return The encrypted result (decrypt client-side)
+    /// @dev Multiple users can call this and each decrypt it with their own key
+    function getComputationResult() external view returns (euint32) {
+        require(hasResultAccess[msg.sender], "No access to result");
+        return _computationResult;
+    }
+
+    // ============================================
+    // PATTERN 3: Batch Decryption
+    // ============================================
+
+    /// @notice Store multiple encrypted values for a user
+    /// @param values Array of encrypted values
+    /// @param proofs Array of proofs
+    /// @dev All values can be retrieved and decrypted in batch client-side
+    function storeBatchData(externalEuint32[] calldata values, bytes[] calldata proofs) external {
+        require(values.length == proofs.length, "Array length mismatch");
+        require(values.length <= 10, "Too many values (max 10)");
+
+        for (uint256 i = 0; i < values.length; ++i) {
+            euint32 verified = FHE.fromExternal(values[i], proofs[i]);
+
+            // In a real contract, you'd store these in a mapping or array
+            // For this example, we'll just grant access
+            FHE.allowThis(verified);
+            FHE.allow(verified, msg.sender);
+        }
+    }
+
+    // ============================================
+    // PATTERN 4: Conditional Decryption Access
+    // ============================================
+
+    /// @notice Compute sum and grant access only if user has private data
+    /// @param addend Encrypted value to add to your private data
+    /// @param inputProof Proof for the addend
+    /// @return The encrypted sum (can decrypt if you have private data)
+    /// @dev Demonstrates conditional access based on state
+    function computeIfAuthorized(externalEuint64 addend, bytes calldata inputProof) external returns (euint64) {
+        // Check authorization
+        require(FHE.isInitialized(_privateData[msg.sender]), "Must have private data first");
+
+        euint64 addValue = FHE.fromExternal(addend, inputProof);
+
+        // Compute with user's private data
+        euint64 sum = FHE.add(_privateData[msg.sender], addValue);
+
+        // Update user's data
+        _privateData[msg.sender] = sum;
+
+        // Grant decryption access to updated value
+        FHE.allowThis(sum);
+        FHE.allow(sum, msg.sender);
+
+        return sum;
+    }
+
+    // ============================================
+    // PATTERN 5: Public Result Pattern
+    // ============================================
+
+    /// @notice Public counter (everyone can know the count)
+    uint256 public publicCounter;
+
+    /// @notice Encrypted counter (only authorized users can decrypt)
+    euint32 private _encryptedCounter;
+
+    /// @notice Users authorized to decrypt the encrypted counter
+    mapping(address user => bool authorized) public isAuthorized;
+
+    /// @notice Increment both public and encrypted counters
+    /// @dev Shows parallel tracking of public and encrypted state
+    /// @custom:concept Sometimes you want a public value for transparency + encrypted for privacy
+    function incrementCounters() external {
+        // Increment public counter (everyone can see)
+        ++publicCounter;
+
+        // Increment encrypted counter (only authorized can decrypt)
+        if (FHE.isInitialized(_encryptedCounter)) {
+            _encryptedCounter = FHE.add(_encryptedCounter, 1);
+        } else {
+            _encryptedCounter = FHE.asEuint32(1);
+        }
+
+        FHE.allowThis(_encryptedCounter);
+
+        // Auto-grant access to caller if not already authorized
+        if (!isAuthorized[msg.sender]) {
+            FHE.allow(_encryptedCounter, msg.sender);
+            isAuthorized[msg.sender] = true;
+        }
+    }
+
+    /// @notice Get encrypted counter (if authorized)
+    /// @return The encrypted counter value
+    /// @dev Compare with publicCounter to verify encrypted operations
+    function getEncryptedCounter() external view returns (euint32) {
+        require(isAuthorized[msg.sender], "Not authorized");
+        return _encryptedCounter;
+    }
+
+    /// @notice Authorize a user to decrypt the encrypted counter
+    /// @param user Address to authorize
+    function authorizeUser(address user) external {
+        require(isAuthorized[msg.sender], "You're not authorized");
+
+        if (FHE.isInitialized(_encryptedCounter)) {
+            FHE.allow(_encryptedCounter, user);
+        }
+        isAuthorized[user] = true;
+    }
+
+    // ============================================
+    // PATTERN 6: Decryption in Practice
+    // ============================================
+
+    /// @notice Example: Private vote that can be decrypted after voting ends
+    /// @param encryptedVote Your encrypted vote (0 or 1)
+    /// @param inputProof Proof for the vote
+    /// @dev This demonstrates how to handle values that should be decryptable later
+    function submitVote(externalEuint8 encryptedVote, bytes calldata inputProof) external {
+        euint8 vote = FHE.fromExternal(encryptedVote, inputProof);
+
+        // In real implementation, you'd aggregate votes
+        // For now, just demonstrate access pattern
+
+        // Grant access to contract and voter
+        FHE.allowThis(vote);
+        FHE.allow(vote, msg.sender);
+
+        // Later, when voting ends, you could grant access to an admin address
+        // to decrypt and tally results
+    }
+
+    // ============================================
+    // Helper Functions
+    // ============================================
+
+    /// @notice Check if you have private data stored
+    /// @return True if you have data
+    function hasPrivateData() external view returns (bool) {
+        return FHE.isInitialized(_privateData[msg.sender]);
+    }
+
+    /// @notice Check if you have access to computation result
+    /// @return True if you have access
+    function canAccessResult() external view returns (bool) {
+        return hasResultAccess[msg.sender];
+    }
+
+    /// @notice Get the current result counter
+    /// @return Number of computations performed
+    function getResultCounter() external view returns (uint256) {
+        return _resultCounter;
+    }
 }
+
 ```
 
-### Step 2: Retrieve Encrypted Value
+## NatSpec Documentation
+
+### @title
+
+- FHE Decryption Patterns
+
+### @author
+
+- FHEVM Example Hub
+
+### @notice
+
+- Demonstrates various decryption patterns in FHEVM
+- User private data (only owner can decrypt)
+- Shared computation result (multiple users can decrypt)
+- Users with access to computation result
+- Counter for computation results
+- Event emitted when private data is stored
+- Event emitted when computation is performed
+- Event emitted when access is granted
+- Store your private encrypted value
+- Get your private encrypted value
+- Perform computation and grant access to result
+- Grant another user access to decrypt the computation result
+- Get the computation result (if you have access)
+- Store multiple encrypted values for a user
+- Compute sum and grant access only if user has private data
+- Public counter (everyone can know the count)
+- Encrypted counter (only authorized users can decrypt)
+- Users authorized to decrypt the encrypted counter
+- Increment both public and encrypted counters
+- Get encrypted counter (if authorized)
+- Authorize a user to decrypt the encrypted counter
+- Example: Private vote that can be decrypted after voting ends
+- Check if you have private data stored
+- Check if you have access to computation result
+- Get the current result counter
+
+### @dev
+
+- Shows user decryption (private) and public decryption patterns
+- After calling this, you can decrypt the value client-side using fhevmjs
+- To decrypt client-side:
+- Demonstrates granting decryption access for a newly computed value
+- PATTERN: Granting decryption access to additional users
+- Multiple users can call this and each decrypt it with their own key
+- All values can be retrieved and decrypted in batch client-side
+- Demonstrates conditional access based on state
+- Shows parallel tracking of public and encrypted state
+- Compare with publicCounter to verify encrypted operations
+- This demonstrates how to handle values that should be decryptable later
+
+### @param
+
+- user User who stored the data
+- resultId ID of the computation result
+- user User granted access
+- resultId Result they can access
+- encryptedValue Your encrypted value
+- inputProof Proof for the encrypted value
+- a First encrypted operand
+- proofA Proof for first operand
+- b Second encrypted operand
+- proofB Proof for second operand
+- user Address to grant access
+- values Array of encrypted values
+- proofs Array of proofs
+- addend Encrypted value to add to your private data
+- inputProof Proof for the addend
+- user Address to authorize
+- encryptedVote Your encrypted vote (0 or 1)
+- inputProof Proof for the vote
+
+### @return
+
+- Your encrypted value (decrypt client-side using fhevmjs)
+- The encrypted result (you can decrypt this client-side)
+- The encrypted result (decrypt client-side)
+- The encrypted sum (can decrypt if you have private data)
+- The encrypted counter value
+- True if you have data
+- True if you have access
+- Number of computations performed
 
-```solidity
-function getMyData() external view returns (euint64) {
-  return _userData[msg.sender];
-}
-```
-
-### Step 3: Decrypt Client-Side (JavaScript)
-
-```javascript
-import { createInstance } from "fhevmjs";
-
-// Create instance with contract's public key
-const instance = await createInstance({ chainId, publicKey });
-
-// Get encrypted value from contract
-const encryptedValue = await contract.getMyData();
-
-// Decrypt using user's private key
-const decryptedValue = await instance.decrypt(contractAddress, encryptedValue);
-
-console.log("Decrypted value:", decryptedValue);
-```
-
-## Access Control
-
-### Pattern 1: Single User Access
-
-Only the owner can decrypt:
-
-```solidity
-mapping(address => euint64) private _privateData;
-
-function storeMyData(externalEuint64 encrypted, bytes calldata proof) external {
-    euint64 data = FHE.fromExternal(encrypted, proof);
-    _privateData[msg.sender] = data;
-
-    FHE.allowThis(data);
-    FHE.allow(data, msg.sender);  // Only msg.sender can decrypt
-}
-
-function getMyData() external view returns (euint64) {
-    return _privateData[msg.sender];
-}
-```
-
-### Pattern 2: Multi-User Access
-
-Multiple users can decrypt the same value:
-
-```solidity
-euint32 private _sharedSecret;
-mapping(address => bool) public hasAccess;
-
-function grantAccess(address user) external onlyOwner {
-    FHE.allow(_sharedSecret, user);  // Grant decryption to user
-    hasAccess[user] = true;
-}
-
-function getSharedSecret() external view returns (euint32) {
-    require(hasAccess[msg.sender], "No access");
-    return _sharedSecret;
-}
-```
-
-**Important:** `FHE.allow()` is permanent! You cannot revoke decryption access once granted.
-
-### Pattern 3: Conditional Access
-
-Grant access based on conditions:
-
-```solidity
-function computeIfAuthorized(externalEuint64 input, bytes calldata proof) external returns (euint64) {
-  require(isAuthorized[msg.sender], "Not authorized");
-
-  euint64 value = FHE.fromExternal(input, proof);
-  euint64 result = FHE.add(_userData[msg.sender], value);
-
-  // Grant access to the result
-  FHE.allowThis(result);
-  FHE.allow(result, msg.sender);
-
-  return result;
-}
-```
-
-## Decryption Patterns
-
-### Pattern 1: Simple User Data
-
-```solidity
-// Contract
-function storeBalance(externalEuint64 encrypted, bytes calldata proof) external {
-  euint64 balance = FHE.fromExternal(encrypted, proof);
-  _balances[msg.sender] = balance;
-
-  FHE.allowThis(balance);
-  FHE.allow(balance, msg.sender);
-}
-
-function getBalance() external view returns (euint64) {
-  return _balances[msg.sender];
-}
-```
-
-```javascript
-// Client
-const encryptedBalance = await contract.getBalance();
-const balance = await instance.decrypt(contractAddress, encryptedBalance);
-```
-
-### Pattern 2: Computed Results
-
-```solidity
-function addToBalance(externalEuint64 amount, bytes calldata proof) external returns (euint64) {
-  euint64 addAmount = FHE.fromExternal(amount, proof);
-  euint64 newBalance = FHE.add(_balances[msg.sender], addAmount);
-
-  _balances[msg.sender] = newBalance;
-
-  // IMPORTANT: New computed value needs new permissions!
-  FHE.allowThis(newBalance);
-  FHE.allow(newBalance, msg.sender);
-
-  return newBalance;
-}
-```
-
-**Key Point:** Every new encrypted value from a computation needs fresh `FHE.allow()` calls!
-
-### Pattern 3: Batch Decryption
-
-Retrieve multiple encrypted values:
-
-```solidity
-struct EncryptedStats {
-    euint32 count;
-    euint64 total;
-    euint32 average;
-}
-
-mapping(address => EncryptedStats) private _stats;
-
-function getMyStats() external view returns (
-    euint32 count,
-    euint64 total,
-    euint32 average
-) {
-    EncryptedStats memory stats = _stats[msg.sender];
-    return (stats.count, stats.total, stats.average);
-}
-```
-
-```javascript
-// Client: Decrypt all values
-const [count, total, average] = await contract.getMyStats();
-
-const decryptedCount = await instance.decrypt(contractAddress, count);
-const decryptedTotal = await instance.decrypt(contractAddress, total);
-const decryptedAverage = await instance.decrypt(contractAddress, average);
-```
-
-### Pattern 4: Time-Delayed Decryption
-
-Reveal encrypted values after a condition:
-
-```solidity
-mapping(address => euint8) private _votes;
-bool public votingEnded;
-address public admin;
-
-function submitVote(externalEuint8 vote, bytes calldata proof) external {
-    require(!votingEnded, "Voting ended");
-
-    euint8 encryptedVote = FHE.fromExternal(vote, proof);
-    _votes[msg.sender] = encryptedVote;
-
-    // Only voter can decrypt during voting
-    FHE.allowThis(encryptedVote);
-    FHE.allow(encryptedVote, msg.sender);
-}
-
-function endVoting() external onlyAdmin {
-    votingEnded = true;
-}
-
-function revealVotes(address voter) external view returns (euint8) {
-    require(votingEnded, "Voting not ended");
-
-    // After voting ends, anyone can request encrypted votes
-    // (They still need permission to decrypt - grant in endVoting)
-    return _votes[voter];
-}
-```
-
-### Pattern 5: Selective Sharing
-
-User controls who can decrypt their data:
-
-```solidity
-mapping(address => euint64) private _privateData;
-mapping(address => mapping(address => bool)) private _sharedWith;
-
-function shareWith(address recipient) external {
-    require(FHE.isInitialized(_privateData[msg.sender]), "No data");
-
-    // Grant decryption access
-    FHE.allow(_privateData[msg.sender], recipient);
-    _sharedWith[msg.sender][recipient] = true;
-}
-
-function getSharedData(address owner) external view returns (euint64) {
-    require(_sharedWith[owner][msg.sender], "Not shared with you");
-    return _privateData[owner];
-}
-```
-
-## Client-Side Decryption
-
-### Complete Example (JavaScript/TypeScript)
-
-```javascript
-import { createInstance } from "fhevmjs";
-import { ethers } from "ethers";
-
-// 1. Setup
-const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-const signer = provider.getSigner();
-const contract = new ethers.Contract(address, abi, signer);
-
-// 2. Create FHEVM instance
-const instance = await createInstance({
-  chainId: await provider.getNetwork().then((n) => n.chainId),
-  publicKey: await contract.getPublicKey(), // If contract provides it
-});
-
-// 3. Get encrypted value from contract
-const encryptedBalance = await contract.getBalance();
-
-// 4. Decrypt
-const decryptedBalance = await instance.decrypt(contract.address, encryptedBalance);
-
-console.log("Your balance:", decryptedBalance);
-```
-
-### Handling Multiple Values
-
-```javascript
-// Parallel decryption
-const [count, total, avg] = await contract.getStats();
-
-const [decCount, decTotal, decAvg] = await Promise.all([
-  instance.decrypt(contractAddress, count),
-  instance.decrypt(contractAddress, total),
-  instance.decrypt(contractAddress, avg),
-]);
-
-console.log(`Count: ${decCount}, Total: ${decTotal}, Average: ${decAvg}`);
-```
-
-### Error Handling
-
-```javascript
-try {
-  const encrypted = await contract.getMyData();
-  const decrypted = await instance.decrypt(contractAddress, encrypted);
-  console.log("Decrypted:", decrypted);
-} catch (error) {
-  if (error.message.includes("No access")) {
-    console.error("You do not have permission to decrypt this value");
-  } else {
-    console.error("Decryption failed:", error);
-  }
-}
-```
-
-## Best Practices
-
-### 1. Always Grant Permissions
-
-```solidity
-// ❌ BAD: User cannot decrypt!
-euint32 result = FHE.add(a, b);
-_result = result;
-// Missing FHE.allow(result, msg.sender)!
-
-// ✅ GOOD: User can decrypt
-euint32 result = FHE.add(a, b);
-_result = result;
-FHE.allowThis(result);
-FHE.allow(result, msg.sender);
-```
-
-### 2. Track Access in State
-
-```solidity
-// Keep track of who has access
-mapping(address => bool) public hasAccess;
-
-function grantAccess(address user) external {
-    FHE.allow(_sharedData, user);
-    hasAccess[user] = true;  // Track in state
-}
-```
-
-### 3. Remember: No Revocation
-
-Once `FHE.allow()` is called, that access is permanent!
-
-```solidity
-// ⚠️ This doesn't actually revoke decryption!
-function revokeAccess(address user) external {
-  hasAccess[user] = false; // Only removes state tracking
-  // User can still decrypt if they cached the encrypted value!
-}
-
-// ✅ To truly revoke, create a new encrypted value
-function rotateSecret() external onlyOwner {
-  _sharedSecret = FHE.asEuint32(newValue);
-  FHE.allowThis(_sharedSecret);
-  // Only grant to authorized users
-}
-```
-
-### 4. Check Initialization
-
-```solidity
-function getData() external view returns (euint64) {
-  require(FHE.isInitialized(_data[msg.sender]), "No data stored");
-  return _data[msg.sender];
-}
-```
-
-### 5. Handle View Functions Correctly
-
-```solidity
-// ✅ GOOD: Return encrypted value
-function getBalance() external view returns (euint64) {
-  return _balances[msg.sender];
-}
-
-// ❌ IMPOSSIBLE: Cannot return decrypted value from contract
-// Contracts can't decrypt! Only users can (client-side)
-function getBalanceDecrypted() external view returns (uint64) {
-  // This is NOT possible in FHEVM!
-  return decrypt(_balances[msg.sender]); // ← Doesn't exist!
-}
-```
-
-## Comparison: When to Use Each Pattern
-
-| Pattern           | Use Case                   | Access Control             |
-| ----------------- | -------------------------- | -------------------------- |
-| Single User       | Private user data          | One user can decrypt       |
-| Multi-User        | Shared secrets, group data | Multiple users can decrypt |
-| Conditional       | Earned access, role-based  | Access based on conditions |
-| Time-Delayed      | Sealed auctions, votes     | Access after time/event    |
-| Selective Sharing | User-controlled sharing    | User grants access         |
-
-## Complete Example
-
-See `contracts/FHEDecryption.sol` for a full implementation demonstrating:
-
-- All decryption patterns
-- Access control strategies
-- Batch decryption
-- Conditional access
-- Best practices
-
-## Next Steps
-
-- Learn about [Encryption Patterns](./encryption.md)
-- See [Access Control Patterns](../contracts/FHEAccessControl.sol)
-- Understand [FHEVM Operations](./operations.md)
-
-## Additional Resources
-
-- [FHEVM Documentation](https://docs.zama.ai/fhevm)
-- [fhevmjs Guide](https://docs.zama.ai/fhevm/getting_started/connect)
-- [Re-encryption Guide](https://docs.zama.ai/fhevm/guides/reencryption)
