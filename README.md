@@ -1,109 +1,180 @@
-# FHEVM Hardhat Template
+# FHEVM Example Hub
 
-A Hardhat-based template for developing Fully Homomorphic Encryption (FHE) enabled Solidity smart contracts using the
-FHEVM protocol by Zama.
+A comprehensive collection of FHEVM (Fully Homomorphic Encryption Virtual Machine) examples built with Hardhat. Each
+example demonstrates one clear concept with automated scaffolding, tests, and documentation.
 
 ## Quick Start
 
-For detailed instructions see:
-[FHEVM Hardhat Quick Start Tutorial](https://docs.zama.ai/protocol/solidity-guides/getting-started/quick-start-tutorial)
+```bash
+# Install dependencies
+npm install
 
-### Prerequisites
+# Compile all contracts
+npm run compile
 
-- **Node.js**: Version 20 or higher
-- **npm or yarn/pnpm**: Package manager
+# Run tests
+npm run test
 
-### Installation
+# Deploy to Sepolia
+npm run deploy:sepolia
+```
 
-1. **Install dependencies**
+## CLI Tool
 
-   ```bash
-   npm install
-   ```
+The Example Hub includes a CLI for scaffolding standalone example projects:
 
-2. **Set up environment variables**
+```bash
+# List available examples
+npx ts-node scripts/cli.ts list
 
-   ```bash
-   npx hardhat vars set MNEMONIC
+# Scaffold a new example project
+npx ts-node scripts/cli.ts scaffold trustless-matching
 
-   # Set your Infura API key for network access
-   npx hardhat vars set INFURA_API_KEY
+# Generate documentation from contracts
+npx ts-node scripts/cli.ts docs
+```
 
-   # Optional: Set Etherscan API key for contract verification
-   npx hardhat vars set ETHERSCAN_API_KEY
-   ```
+## Available Examples
 
-3. **Compile and test**
+### Basic Operations
 
-   ```bash
-   npm run compile
-   npm run test
-   ```
+| Example       | Description                                | Concepts                                             |
+| ------------- | ------------------------------------------ | ---------------------------------------------------- |
+| `counter`     | Encrypted counter with increment/decrement | `euint32`, `FHE.add`, `FHE.sub`, `inputProof`        |
+| `comparisons` | Encrypted comparison operations            | `FHE.eq`, `FHE.ne`, `FHE.lt`, `FHE.gt`, `ebool`      |
+| `arithmetic`  | Encrypted arithmetic operations            | `FHE.add`, `FHE.sub`, `FHE.mul`                      |
+| `bitwise`     | Encrypted bitwise operations               | `FHE.and`, `FHE.or`, `FHE.xor`, `FHE.shl`, `FHE.shr` |
 
-4. **Deploy to local network**
+### Encryption Patterns
 
-   ```bash
-   # Start a local FHEVM-ready node
-   npx hardhat node
-   # Deploy to local network
-   npx hardhat deploy --network localhost
-   ```
+| Example           | Description                   | Concepts                          |
+| ----------------- | ----------------------------- | --------------------------------- |
+| `encrypted-erc20` | ERC20 with encrypted balances | `euint64`, confidential transfers |
 
-5. **Deploy to Sepolia Testnet**
+### Access Control
 
-   ```bash
-   # Deploy to Sepolia
-   npx hardhat deploy --network sepolia
-   # Verify contract on Etherscan
-   npx hardhat verify --network sepolia <CONTRACT_ADDRESS>
-   ```
+| Example          | Description             | Concepts                                  |
+| ---------------- | ----------------------- | ----------------------------------------- |
+| `access-control` | Access control patterns | `FHE.allow`, `FHE.allowThis`, permissions |
 
-6. **Test on Sepolia Testnet**
+### Advanced Patterns
 
-   ```bash
-   # Once deployed, you can run a simple test on Sepolia.
-   npx hardhat test --network sepolia
-   ```
+| Example              | Description                    | Concepts                               |
+| -------------------- | ------------------------------ | -------------------------------------- |
+| `blind-auction`      | Sealed-bid auction             | `FHE.select`, `FHE.gt`, encrypted bids |
+| `trustless-matching` | Private voting/matching system | `ebool`, `FHE.and`, conditional reveal |
 
-## 📁 Project Structure
+### Anti-Patterns (Common Mistakes)
+
+| Example              | Description               | Concepts                      |
+| -------------------- | ------------------------- | ----------------------------- |
+| `anti-missing-allow` | Missing FHE.allow issues  | Access errors, permissions    |
+| `anti-overflow`      | Overflow/underflow issues | Range checks, safe arithmetic |
+
+## Project Structure
 
 ```
-fhevm-hardhat-template/
-├── contracts/           # Smart contract source files
-│   └── FHECounter.sol   # Example FHE counter contract
-├── deploy/              # Deployment scripts
-├── tasks/               # Hardhat custom tasks
+├── contracts/           # Solidity contracts
+│   ├── FHECounter.sol
+│   ├── FHEComparisons.sol
+│   ├── FHEArithmetic.sol
+│   ├── FHEBitwise.sol
+│   ├── EncryptedERC20.sol
+│   ├── FHEAccessControl.sol
+│   ├── BlindAuction.sol
+│   ├── TrustlessMatching.sol
+│   ├── AntiMissingAllow.sol
+│   └── AntiOverflow.sol
 ├── test/                # Test files
-├── hardhat.config.ts    # Hardhat configuration
-└── package.json         # Dependencies and scripts
+├── deploy/              # Deployment scripts
+├── tasks/               # Hardhat tasks
+├── scripts/             # CLI and utilities
+│   └── cli.ts           # Example Hub CLI
+├── docs/                # Auto-generated documentation
+└── hardhat.config.ts    # Hardhat configuration
 ```
 
-## 📜 Available Scripts
+## Key FHEVM Concepts
 
-| Script             | Description              |
-| ------------------ | ------------------------ |
-| `npm run compile`  | Compile all contracts    |
-| `npm run test`     | Run all tests            |
-| `npm run coverage` | Generate coverage report |
-| `npm run lint`     | Run linting checks       |
-| `npm run clean`    | Clean build artifacts    |
+### Encrypted Types
 
-## 📚 Documentation
+- `ebool` - Encrypted boolean
+- `euint8`, `euint16`, `euint32`, `euint64` - Encrypted unsigned integers
+- `eaddress` - Encrypted address
+
+### FHE Operations
+
+```solidity
+// Arithmetic
+FHE.add(a, b)  // Addition
+FHE.sub(a, b)  // Subtraction
+FHE.mul(a, b)  // Multiplication
+
+// Comparison (returns ebool)
+FHE.eq(a, b)   // Equal
+FHE.ne(a, b)   // Not equal
+FHE.lt(a, b)   // Less than
+FHE.gt(a, b)   // Greater than
+FHE.le(a, b)   // Less or equal
+FHE.ge(a, b)   // Greater or equal
+
+// Bitwise
+FHE.and(a, b)  // Bitwise AND
+FHE.or(a, b)   // Bitwise OR
+FHE.xor(a, b)  // Bitwise XOR
+FHE.not(a)     // Bitwise NOT
+FHE.shl(a, n)  // Shift left
+FHE.shr(a, n)  // Shift right
+
+// Conditional
+FHE.select(condition, ifTrue, ifFalse)  // Ternary selection
+
+// Access Control (CRITICAL!)
+FHE.allowThis(value)     // Allow contract to use value
+FHE.allow(value, user)   // Allow user to decrypt value
+```
+
+### Input Handling
+
+```solidity
+// Accept encrypted input from user
+function processInput(externalEuint32 encryptedValue, bytes calldata inputProof) external {
+  euint32 value = FHE.fromExternal(encryptedValue, inputProof);
+  // Use value...
+}
+```
+
+## Testing
+
+```bash
+# Run all tests (local mock)
+npm run test
+
+# Run tests on Sepolia
+npm run test:sepolia
+```
+
+## Deployment
+
+```bash
+# Set up environment variables
+npx hardhat vars set MNEMONIC
+npx hardhat vars set INFURA_API_KEY
+
+# Deploy to Sepolia
+npm run deploy:sepolia
+```
+
+## Resources
 
 - [FHEVM Documentation](https://docs.zama.ai/fhevm)
-- [FHEVM Hardhat Setup Guide](https://docs.zama.ai/protocol/solidity-guides/getting-started/setup)
-- [FHEVM Testing Guide](https://docs.zama.ai/protocol/solidity-guides/development-guide/hardhat/write_test)
-- [FHEVM Hardhat Plugin](https://docs.zama.ai/protocol/solidity-guides/development-guide/hardhat)
+- [FHEVM Solidity API](https://docs.zama.ai/fhevm/references/api)
+- [Zama Discord](https://discord.gg/zama)
+- [Zama GitHub](https://github.com/zama-ai)
 
-## 📄 License
+## License
 
 This project is licensed under the BSD-3-Clause-Clear License. See the [LICENSE](LICENSE) file for details.
-
-## 🆘 Support
-
-- **GitHub Issues**: [Report bugs or request features](https://github.com/zama-ai/fhevm/issues)
-- **Documentation**: [FHEVM Docs](https://docs.zama.ai)
-- **Community**: [Zama Discord](https://discord.gg/zama)
 
 ---
 
