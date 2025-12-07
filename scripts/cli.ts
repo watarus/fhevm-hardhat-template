@@ -900,7 +900,17 @@ function generateDocs(): void {
 
   try {
     fs.writeFileSync(path.join(docsDir, "README.md"), indexContent);
-    console.log("\n✅ Documentation generated in docs/\n");
+    console.log("\n✅ Documentation generated in docs/");
+
+    // Run prettier to format the generated docs
+    console.log("📝 Formatting with prettier...");
+    const { execSync } = require("child_process");
+    try {
+      execSync('npx prettier --write "docs/**/*.md"', { stdio: "ignore" });
+      console.log("✅ Formatting complete\n");
+    } catch {
+      console.log("⚠️  Prettier formatting skipped (not available)\n");
+    }
   } catch (error) {
     console.error(`❌ Failed to write docs index: ${error instanceof Error ? error.message : String(error)}`);
     console.log("\nPossible fixes:");
